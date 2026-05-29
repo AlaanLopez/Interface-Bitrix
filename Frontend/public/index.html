@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Base de Cuentas — CRM Bitrix</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── ENCABEZADO ─────────────────────────────────────────────────── -->
+  <header>
+    <div class="header-inner">
+      <h1>📋 Base de Cuentas</h1>
+      <span id="badge-total" class="badge">—</span>
+    </div>
+  </header>
+
+  <!-- ── BARRA DE HERRAMIENTAS ──────────────────────────────────────── -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <input id="input-busqueda" type="search" placeholder="🔍  Buscar en todos los campos…" autocomplete="off" />
+      <select id="select-por-pagina">
+        <option value="25">25 por página</option>
+        <option value="50" selected>50 por página</option>
+        <option value="100">100 por página</option>
+        <option value="200">200 por página</option>
+      </select>
+    </div>
+    <div class="toolbar-right">
+      <button id="btn-recargar" class="btn btn-secondary">↺ Recargar</button>
+    </div>
+  </div>
+
+  <!-- ── TABLA ──────────────────────────────────────────────────────── -->
+  <div class="table-wrapper">
+    <div id="estado-carga" class="estado">Cargando datos…</div>
+    <table id="tabla" class="hidden">
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- ── PAGINACIÓN ─────────────────────────────────────────────────── -->
+  <div class="paginacion" id="paginacion"></div>
+
+  <!-- ── MODAL EDICIÓN ──────────────────────────────────────────────── -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>✏️ Editar celda</h2>
+      <div class="modal-info">
+        <span id="modal-id-label"></span>
+        <span id="modal-col-label"></span>
+      </div>
+      <textarea id="modal-valor" rows="4"></textarea>
+      <div class="modal-actions">
+        <button id="modal-cancelar" class="btn btn-secondary">Cancelar</button>
+        <button id="modal-guardar"  class="btn btn-primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TOAST ──────────────────────────────────────────────────────── -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
