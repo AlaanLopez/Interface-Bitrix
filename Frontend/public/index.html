@@ -32,6 +32,62 @@
     </div>
   </div>
 
+  <!-- ── SINCRONIZACIÓN ───────────────────────────────────────────────── -->
+  <section class="sync-panel">
+    <div class="sync-header">
+      <div>
+        <h2>Sincronización Bitrix</h2>
+        <p id="sync-mensaje">—</p>
+      </div>
+      <span id="sync-estado" class="status-pill idle">idle</span>
+    </div>
+
+    <div class="sync-metrics">
+      <div class="metric">
+        <span>Pendientes</span>
+        <strong id="metric-pendientes">0</strong>
+      </div>
+      <div class="metric">
+        <span>En proceso</span>
+        <strong id="metric-proceso">0</strong>
+      </div>
+      <div class="metric">
+        <span>Finalizados</span>
+        <strong id="metric-finalizados">0</strong>
+      </div>
+      <div class="metric">
+        <span>Errores</span>
+        <strong id="metric-errores">0</strong>
+      </div>
+    </div>
+
+    <div class="sync-actions">
+      <button id="btn-sync-iniciar" class="btn btn-primary">Iniciar</button>
+      <button id="btn-sync-pausar" class="btn btn-secondary">Pausar</button>
+      <button id="btn-sync-reanudar" class="btn btn-secondary">Reanudar</button>
+      <button id="btn-sync-reintentar" class="btn btn-secondary">Reintentar errores</button>
+    </div>
+
+    <div class="sync-last">
+      <h3>Últimos registros</h3>
+      <div class="last-table-wrapper">
+        <table class="last-table">
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>SAP</th>
+              <th>Estado</th>
+              <th>Bitrix ID</th>
+              <th>Error</th>
+              <th>Fecha</th>
+            </tr>
+          </thead>
+          <tbody id="sync-ultimos"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <!-- ── TABLA ──────────────────────────────────────────────────────── -->
   <div class="table-wrapper">
     <div id="estado-carga" class="estado">Cargando datos…</div>

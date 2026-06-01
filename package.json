@@ -4,7 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node Frontend/server.js",
+    "test": "node tests/run-all.js",
+    "test:csv": "node tests/conexionCsv.test.js",
+    "test:controller": "node tests/syncController.property.test.js",
+    "test:sync": "node tests/synchronizer.property.test.js"
   },
   "keywords": [],
   "author": "",

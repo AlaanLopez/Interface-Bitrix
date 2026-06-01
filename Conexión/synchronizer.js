@@ -16,9 +16,13 @@ const { leerCSV, guardarCSV } = require("./conexion_csv");
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
-const WEBHOOK_URL = "https://une.bitrix24.com/rest/38/{token}/crm.company.add.json";
+const WEBHOOK_URL = (
+  process.env.BITRIX_WEBHOOK_URL ||
+  process.env.CRM_BITRIX_WEBHOOK_URL ||
+  ""
+).trim();
 const TIMEOUT_MS  = 30_000;   // 30 segundos
-const DELAY_MS    = 3_000;    // 3 segundos entre registros
+const DELAY_MS    = 500;      // 0.5 segundos entre registros
 
 // ── Utilidades internas ──────────────────────────────────────────────────────
 
@@ -38,6 +42,20 @@ function _fechaActual() {
   const ss   = pad(ahora.getSeconds());
 
   return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+}
+
+/**
+ * Devuelve la URL configurada para el webhook de Bitrix24.
+ * @returns {string}
+ */
+function obtenerWebhookUrl() {
+  if (!WEBHOOK_URL) {
+    throw new Error("BITRIX_WEBHOOK_URL no configurada.");
+  }
+  if (WEBHOOK_URL.includes("{token}")) {
+    throw new Error("BITRIX_WEBHOOK_URL contiene un token placeholder.");
+  }
+  return WEBHOOK_URL;
 }
 
 // ── Funciones públicas ───────────────────────────────────────────────────────
@@ -86,7 +104,18 @@ function enviarAlWebhook(payload) {
     const cuerpo = JSON.stringify(payload);
 
     // Parsear la URL para extraer host, path y puerto
-    const url    = new URL(WEBHOOK_URL);
+    let url;
+    try {
+      url = new URL(obtenerWebhookUrl());
+    } catch (err) {
+      resolve({
+        ok:        false,
+        error:     err.message,
+        respuesta: "",
+      });
+      return;
+    }
+
     const opciones = {
       hostname: url.hostname,
       port:     url.port || 443,
@@ -241,10 +270,23 @@ async function iniciarSincronizacion(controlador) {
     return { motivo: "completed", mensaje: msg };
   }
 
+  try {
+    obtenerWebhookUrl();
+  } catch (err) {
+    console.error("[Sync]", err.message);
+    controlador.transicionar("idle");
+    return { motivo: "error", mensaje: err.message };
+  }
+
   // ── 4. Iterar sobre los registros pendientes ───────────────────────────────
   for (let i = 0; i < pendientes.length; i++) {
     const { row, idx } = pendientes[i];
     const esUltimo     = i === pendientes.length - 1;
+
+    if (controlador.getPausaSenal()) {
+      console.log("[Sync] Sincronización pausada por el operador.");
+      return { motivo: "paused" };
+    }
 
     // ── 4a. Marcar "en proceso" y guardar ─────────────────────────────────
     row["ESTADO_CARGA"] = "en proceso";
@@ -336,4 +378,4 @@ async function iniciarSincronizacion(controlador) {
 
 // ── Exportar ─────────────────────────────────────────────────────────────────
 
-module.exports = { iniciarSincronizacion, enviarAlWebhook, esperaCancelable };
+module.exports = { iniciarSincronizacion, enviarAlWebhook, esperaCancelable, obtenerWebhookUrl };

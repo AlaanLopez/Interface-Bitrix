@@ -15,6 +15,8 @@
 
 'use strict';
 
+process.env.BITRIX_WEBHOOK_URL = 'https://une.bitrix24.com/rest/38/test/crm.company.add.json';
+
 const fc = require('fast-check');
 const path = require('path');
 const fs = require('fs');
@@ -638,7 +640,7 @@ const csvPath  = fs.existsSync(CSV_MODULE_PATH_ACCENT)  ? CSV_MODULE_PATH_ACCENT
       // Validates: Requirements 3.6
 
       // Patch setTimeout globally so that esperaCancelable resolves instantly
-      // (avoids 3000ms real delays between records during property runs).
+      // (avoids real delays between records during property runs).
       // We call fn synchronously to avoid async overhead from 30 setImmediate hops.
       const originalSetTimeout = global.setTimeout;
       global.setTimeout = (fn, _delay, ...args) => { fn(...args); return 0; };
@@ -756,20 +758,20 @@ const csvPath  = fs.existsSync(CSV_MODULE_PATH_ACCENT)  ? CSV_MODULE_PATH_ACCENT
 // ── Property 9 ────────────────────────────────────────────────────────────────
 
 (async () => {
-  await describe('Property 9: El delay entre registros es siempre de 3000ms', async () => {
+  await describe('Property 9: El delay entre registros es siempre de 500ms', async () => {
 
-    await test('esperaCancelable es invocada con ms=3000 entre registros consecutivos (N-1 delays de 30 ticks × 100ms)', async () => {
-      // Feature: bitrix-csv-sync, Property 9: El delay entre registros es siempre de 3000ms
+    await test('esperaCancelable es invocada con ms=500 entre registros consecutivos (N-1 delays de 5 ticks × 100ms)', async () => {
+      // Feature: bitrix-csv-sync, Property 9: El delay entre registros es siempre de 500ms
       // Validates: Requirements 4.1
       //
       // Strategy:
-      //   - esperaCancelable(3000, ctrl) internally calls setTimeout(tick, 100) exactly
-      //     30 times before resolving (transcurrido reaches 3000 on the 30th tick).
+      //   - esperaCancelable(500, ctrl) internally calls setTimeout(tick, 100) exactly
+      //     5 times before resolving (transcurrido reaches 500 on the 5th tick).
       //   - For N records there are exactly N-1 inter-record delays.
       //   - We mock global.setTimeout per-run to (a) record every ms argument and
       //     (b) call the callback synchronously so the test does not hang.
       //   - After the sync we assert that the number of setTimeout calls with ms=100
-      //     equals exactly 30 * (N-1), which proves each delay is 3000ms (30 × 100ms).
+      //     equals exactly 5 * (N-1), which proves each delay is 500ms (5 × 100ms).
 
       const originalSetTimeout = global.setTimeout;
 
@@ -879,12 +881,12 @@ const csvPath  = fs.existsSync(CSV_MODULE_PATH_ACCENT)  ? CSV_MODULE_PATH_ACCENT
               }
 
               // ── 7. Assertions ──────────────────────────────────────────────
-              // Each call to esperaCancelable(3000, ctrl) polls every 100ms.
+              // Each call to esperaCancelable(500, ctrl) polls every 100ms.
               // transcurrido starts at 0; after each tick it increases by 100.
-              // The loop resolves when transcurrido >= 3000, which happens on
-              // the 30th tick (100*30 = 3000). So each delay = 30 setTimeout calls.
+              // The loop resolves when transcurrido >= 500, which happens on
+              // the 5th tick (100*5 = 500). So each delay = 5 setTimeout calls.
               // There are N-1 inter-record delays.
-              const TICKS_PER_DELAY = 3000 / 100; // 30
+              const TICKS_PER_DELAY = 500 / 100; // 5
               const expectedDelayTicks = TICKS_PER_DELAY * (N - 1);
 
               // Count only the 100ms ticks (from esperaCancelable polling)
@@ -895,7 +897,7 @@ const csvPath  = fs.existsSync(CSV_MODULE_PATH_ACCENT)  ? CSV_MODULE_PATH_ACCENT
                 expectedDelayTicks,
                 `Expected ${expectedDelayTicks} setTimeout(fn, 100) calls for N=${N} records ` +
                 `(${N - 1} delays × ${TICKS_PER_DELAY} ticks), but got ${tickCalls}. ` +
-                `This proves each inter-record delay is exactly 3000ms (30 × 100ms).`
+                `This proves each inter-record delay is exactly 500ms (5 × 100ms).`
               );
             }
           ),

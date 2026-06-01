@@ -15,7 +15,11 @@ const fs   = require("fs");
 const path = require("path");
 
 // ── Ruta al archivo ──────────────────────────────────────────────────────────
-const CSV_PATH = path.join(__dirname, "..", "Base de cuentas valores únicos.csv");
+const CSV_PATH = path.resolve(
+  process.env.CRM_CSV_PATH ||
+  process.env.CSV_PATH ||
+  path.join(__dirname, "..", "Base de cuentas valores únicos.csv")
+);
 const SEPARADOR = ";";
 const ENCODING  = "latin1";
 
@@ -27,56 +31,81 @@ const ENCODING  = "latin1";
  * @returns {{ headers: string[], rows: Object[] }}
  */
 function _parsear(contenido) {
-  const lineas  = contenido.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-  const headers = lineas[0].split(SEPARADOR);
-  const rows    = [];
+  const registros = _parsearRegistros(contenido);
+  if (registros.length === 0) return { headers: [], rows: [] };
 
-  for (let i = 1; i < lineas.length; i++) {
-    const linea = lineas[i];
-    if (!linea.trim()) continue;          // ignorar líneas vacías
+  const headers = registros[0].map((h, idx) =>
+    idx === 0 ? h.replace(/^\uFEFF/, "") : h
+  );
 
-    // Dividir respetando campos que contienen el separador dentro de comillas
-    const campos = _dividirLinea(linea);
-    const obj    = {};
-    headers.forEach((h, idx) => {
-      obj[h] = campos[idx] !== undefined ? campos[idx] : "";
+  const rows = registros.slice(1)
+    .filter(campos => campos.some(c => String(c).trim() !== ""))
+    .map(campos => {
+      const obj = {};
+      headers.forEach((h, idx) => {
+        obj[h] = campos[idx] !== undefined ? campos[idx] : "";
+      });
+      return obj;
     });
-    rows.push(obj);
-  }
 
   return { headers, rows };
 }
 
 /**
- * Divide una línea CSV respetando campos entre comillas dobles.
- * @param {string} linea
- * @returns {string[]}
+ * Parsea CSV completo respetando comillas, separadores y saltos de línea dentro
+ * de campos entrecomillados.
+ * @param {string} contenido
+ * @returns {string[][]}
  */
-function _dividirLinea(linea) {
-  const campos = [];
-  let actual   = "";
+function _parsearRegistros(contenido) {
+  const registros = [];
+  let campos = [];
+  let actual = "";
   let enComillas = false;
+  let campoEntrecomillado = false;
 
-  for (let i = 0; i < linea.length; i++) {
-    const c = linea[i];
+  const cerrarCampo = () => {
+    campos.push(actual);
+    actual = "";
+    campoEntrecomillado = false;
+  };
+
+  const cerrarRegistro = () => {
+    cerrarCampo();
+    registros.push(campos);
+    campos = [];
+  };
+
+  for (let i = 0; i < contenido.length; i++) {
+    const c = contenido[i];
 
     if (c === '"') {
-      if (enComillas && linea[i + 1] === '"') {
-        actual += '"';   // comilla escapada ""
+      if (enComillas && contenido[i + 1] === '"') {
+        actual += '"';
         i++;
+      } else if (!enComillas && actual === "") {
+        enComillas = true;
+        campoEntrecomillado = true;
+      } else if (enComillas) {
+        enComillas = false;
       } else {
-        enComillas = !enComillas;
-        actual += c;     // conservar las comillas en el valor
+        actual += c;
       }
     } else if (c === SEPARADOR && !enComillas) {
-      campos.push(actual);
-      actual = "";
+      cerrarCampo();
+    } else if ((c === "\n" || c === "\r") && !enComillas) {
+      cerrarRegistro();
+      if (c === "\r" && contenido[i + 1] === "\n") i++;
     } else {
       actual += c;
     }
   }
-  campos.push(actual);
-  return campos;
+
+  if (actual !== "" || campoEntrecomillado || campos.length > 0) {
+    cerrarRegistro();
+  }
+
+  return registros;
 }
 
 /**
@@ -88,10 +117,28 @@ function _dividirLinea(linea) {
 function _serializar(headers, rows) {
   const lineas = [headers.join(SEPARADOR)];
   for (const row of rows) {
-    const campos = headers.map(h => row[h] !== undefined ? row[h] : "");
+    const campos = headers.map(h => _escaparCampo(row[h] !== undefined ? row[h] : ""));
     lineas.push(campos.join(SEPARADOR));
   }
   return lineas.join("\r\n");
+}
+
+/**
+ * Escapa un valor para CSV usando comillas dobles solo cuando hace falta.
+ * @param {*} valor
+ * @returns {string}
+ */
+function _escaparCampo(valor) {
+  const texto = String(valor ?? "");
+  const requiereComillas =
+    texto.includes(SEPARADOR) ||
+    texto.includes('"') ||
+    texto.includes("\n") ||
+    texto.includes("\r") ||
+    texto !== texto.trim();
+
+  if (!requiereComillas) return texto;
+  return `"${texto.replace(/"/g, '""')}"`;
 }
 
 // ── Funciones públicas ───────────────────────────────────────────────────────
@@ -118,7 +165,10 @@ function leerCSV() {
  */
 function guardarCSV(headers, rows, ruta = CSV_PATH) {
   const contenido = _serializar(headers, rows);
-  fs.writeFileSync(ruta, contenido, ENCODING);
+  const dir = path.dirname(ruta);
+  const tmp = path.join(dir, `.${path.basename(ruta)}.${process.pid}.tmp`);
+  fs.writeFileSync(tmp, contenido, ENCODING);
+  fs.renameSync(tmp, ruta);
   console.log(`[OK] Archivo guardado en: ${ruta}`);
 }
 

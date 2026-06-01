@@ -8,6 +8,8 @@
 
 const assert = require('assert');
 
+let suiteQueue = Promise.resolve();
+
 /**
  * Runs a single named test case.
  * @param {string} name  - Human-readable test name.
@@ -30,8 +32,13 @@ async function test(name, fn) {
  * @param {Function} fn   - Function that calls `test()` entries.
  */
 async function describe(label, fn) {
-  console.log(`\n${label}`);
-  await fn();
+  const run = suiteQueue.then(async () => {
+    console.log(`\n${label}`);
+    await fn();
+  });
+
+  suiteQueue = run.catch(() => {});
+  return run;
 }
 
 /**

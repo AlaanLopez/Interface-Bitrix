@@ -11,18 +11,20 @@
 
 "use strict";
 
-const { leerCSV } = require("./conexion_csv");
+const { leerCSV, guardarCSV } = require("./conexion_csv");
 
 // ── Estado en memoria ────────────────────────────────────────────────────────
 
 /**
  * @typedef {'idle'|'running'|'paused'|'completed'} EstadoSync
  *
- * @type {{ estado: EstadoSync, pausaSenal: boolean }}
+ * @type {{ estado: EstadoSync, pausaSenal: boolean, actualizadoEn: string, mensaje: string }}
  */
 const estado = {
-  estado: "idle",
-  pausaSenal: false,
+  estado:       "idle",
+  pausaSenal:   false,
+  actualizadoEn: "",
+  mensaje:      "",
 };
 
 // ── Getters / Setters ────────────────────────────────────────────────────────
@@ -55,8 +57,15 @@ function getPausaSenal() {
  * Transiciona el controlador a un nuevo estado.
  * @param {EstadoSync} nuevoEstado
  */
-function transicionar(nuevoEstado) {
+function transicionar(nuevoEstado, mensaje = "") {
+  const estadosValidos = new Set(["idle", "running", "paused", "completed"]);
+  if (!estadosValidos.has(nuevoEstado)) {
+    throw new Error(`Estado de sincronización inválido: ${nuevoEstado}`);
+  }
+
   estado.estado = nuevoEstado;
+  estado.mensaje = mensaje;
+  estado.actualizadoEn = new Date().toISOString();
 }
 
 // ── Resumen de estados ───────────────────────────────────────────────────────
@@ -89,6 +98,21 @@ function calcularResumen() {
   }
 
   return resumen;
+}
+
+/**
+ * Devuelve conteos, últimos registros y estado de ejecución en un solo objeto.
+ * @returns {Object}
+ */
+function obtenerSnapshot() {
+  return {
+    estado:          getEstado(),
+    pausaSolicitada: getPausaSenal(),
+    actualizadoEn:   estado.actualizadoEn,
+    mensaje:         estado.mensaje,
+    resumen:         calcularResumen(),
+    ultimos:         obtenerUltimosRegistros(20),
+  };
 }
 
 // ── Últimos registros procesados ─────────────────────────────────────────────
@@ -135,6 +159,31 @@ function obtenerUltimosRegistros(limite = 20) {
   });
 }
 
+/**
+ * Devuelve a pendientes los registros marcados con error para reprocesarlos.
+ * @returns {number}
+ */
+function reintentarErrores() {
+  const { headers, rows } = leerCSV();
+  let total = 0;
+
+  for (const row of rows) {
+    if (row["ESTADO_CARGA"] !== "error") continue;
+
+    row["ESTADO_CARGA"] = "no ejecutado";
+    row["BITRIX_ID"] = "";
+    row["MENSAJE_ERROR"] = "";
+    row["RESPUESTA_BITRIX"] = "";
+    total++;
+  }
+
+  if (total > 0) {
+    guardarCSV(headers, rows);
+  }
+
+  return total;
+}
+
 // ── Exportar ─────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -144,4 +193,6 @@ module.exports = {
   transicionar,
   calcularResumen,
   obtenerUltimosRegistros,
+  obtenerSnapshot,
+  reintentarErrores,
 };

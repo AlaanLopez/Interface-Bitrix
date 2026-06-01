@@ -9,9 +9,10 @@
  *  - Ordenamiento por columna (clic en encabezado)
  *  - Edición inline de celdas con doble clic → modal → guarda en el CSV
  *  - Paginación con navegación por páginas
+ *  - Control operativo de sincronización con Bitrix
  */
 
-const API = "http://localhost:3000/api";
+const API = "/api";
 
 // ── Estado global ────────────────────────────────────────────────────────────
 const estado = {
@@ -23,6 +24,7 @@ const estado = {
   sortCol   : null,
   sortDir   : "asc",   // "asc" | "desc"
   debounceId: null,
+  syncTimer : null,
 };
 
 // ── Referencias DOM ──────────────────────────────────────────────────────────
@@ -35,6 +37,19 @@ const $paginacion   = document.getElementById("paginacion");
 const $inputBusq    = document.getElementById("input-busqueda");
 const $selectPor    = document.getElementById("select-por-pagina");
 const $btnRecargar  = document.getElementById("btn-recargar");
+
+// Sincronización
+const $syncEstado     = document.getElementById("sync-estado");
+const $syncMensaje    = document.getElementById("sync-mensaje");
+const $metricPend     = document.getElementById("metric-pendientes");
+const $metricProc     = document.getElementById("metric-proceso");
+const $metricFin      = document.getElementById("metric-finalizados");
+const $metricErr      = document.getElementById("metric-errores");
+const $syncUltimos    = document.getElementById("sync-ultimos");
+const $btnSyncIniciar = document.getElementById("btn-sync-iniciar");
+const $btnSyncPausar  = document.getElementById("btn-sync-pausar");
+const $btnSyncReanudar= document.getElementById("btn-sync-reanudar");
+const $btnSyncRetry   = document.getElementById("btn-sync-reintentar");
 
 // Modal
 const $overlay      = document.getElementById("modal-overlay");
@@ -103,9 +118,11 @@ const COLS_EDITABLES = new Set([
 ]);
 
 // ── Carga de datos ───────────────────────────────────────────────────────────
-async function cargarDatos() {
-  mostrarEstado("Cargando datos…");
-  $tabla.classList.add("hidden");
+async function cargarDatos(silencioso = false) {
+  if (!silencioso) {
+    mostrarEstado("Cargando datos…");
+    $tabla.classList.add("hidden");
+  }
 
   const params = new URLSearchParams({
     q      : estado.busqueda,
@@ -129,7 +146,8 @@ async function cargarDatos() {
     $tabla.classList.remove("hidden");
 
   } catch (err) {
-    mostrarEstado(`❌ ${err.message}`);
+    if (!silencioso) mostrarEstado(`❌ ${err.message}`);
+    else mostrarToast(err.message, "error");
   }
 }
 
@@ -281,8 +299,8 @@ let _editando = { id: null, col: null };
 
 function abrirModal(id, col, valorActual) {
   _editando = { id, col };
-  $modalIdLabel.innerHTML  = `<strong>ID Fiscal:</strong> ${id}`;
-  $modalColLabel.innerHTML = `<strong>Campo:</strong> ${col}`;
+  $modalIdLabel.textContent  = `ID Fiscal: ${id}`;
+  $modalColLabel.textContent = `Campo: ${col}`;
   $modalValor.value        = valorActual;
   $overlay.classList.remove("hidden");
   setTimeout(() => $modalValor.focus(), 50);
@@ -345,6 +363,114 @@ function mostrarEstado(msg) {
   $tabla.classList.add("hidden");
 }
 
+// ── Sincronización ───────────────────────────────────────────────────────────
+async function cargarEstadoSync() {
+  try {
+    const res = await fetch(`${API}/sync/estado`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Error al consultar sincronización");
+
+    renderizarSync(data);
+
+    if (data.activo) {
+      cargarDatos(true);
+      programarSyncPoll(2500);
+    } else {
+      programarSyncPoll(6000);
+    }
+  } catch (err) {
+    $syncMensaje.textContent = err.message;
+    programarSyncPoll(8000);
+  }
+}
+
+function programarSyncPoll(ms) {
+  clearTimeout(estado.syncTimer);
+  estado.syncTimer = setTimeout(cargarEstadoSync, ms);
+}
+
+function renderizarSync(data) {
+  const resumen = data.resumen || {};
+  const estadoSync = data.estado || "idle";
+
+  $syncEstado.textContent = data.pausaSolicitada && data.activo
+    ? `${estadoSync} · pausa solicitada`
+    : estadoSync;
+  $syncEstado.className = `status-pill ${estadoSync}`;
+
+  $syncMensaje.textContent = data.mensaje || (data.activo ? "Procesando registros." : "Listo.");
+  $metricPend.textContent = Number(resumen.noEjecutado || 0).toLocaleString();
+  $metricProc.textContent = Number(resumen.enProceso || 0).toLocaleString();
+  $metricFin.textContent  = Number(resumen.finalizado || 0).toLocaleString();
+  $metricErr.textContent  = Number(resumen.error || 0).toLocaleString();
+
+  $btnSyncIniciar.disabled  = data.activo;
+  $btnSyncPausar.disabled   = !data.activo || data.pausaSolicitada;
+  $btnSyncReanudar.disabled = data.activo;
+  $btnSyncRetry.disabled    = data.activo || Number(resumen.error || 0) === 0;
+
+  renderizarUltimos(data.ultimos || []);
+}
+
+function renderizarUltimos(rows) {
+  $syncUltimos.innerHTML = "";
+
+  if (rows.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 6;
+    td.className = "empty-last";
+    td.textContent = "Sin registros procesados.";
+    tr.appendChild(td);
+    $syncUltimos.appendChild(tr);
+    return;
+  }
+
+  rows.forEach(row => {
+    const tr = document.createElement("tr");
+    [
+      "NOMBRE DE CLIENTE",
+      "CODIGO SAP",
+      "ESTADO_CARGA",
+      "BITRIX_ID",
+      "MENSAJE_ERROR",
+      "FECHA_EJECUCION",
+    ].forEach(campo => {
+      const td = document.createElement("td");
+      const valor = row[campo] || "";
+      td.textContent = valor;
+      td.title = valor;
+      if (campo === "ESTADO_CARGA") td.className = `estado-${valor.replace(/\s+/g, "-")}`;
+      tr.appendChild(td);
+    });
+    $syncUltimos.appendChild(tr);
+  });
+}
+
+async function ejecutarAccionSync(ruta, mensajeOk) {
+  bloquearAccionesSync(true);
+  try {
+    const res = await fetch(`${API}${ruta}`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "No se pudo ejecutar la acción");
+
+    if (data.sync) renderizarSync(data.sync);
+    mostrarToast(mensajeOk || data.mensaje || "Acción ejecutada", "success");
+    await cargarEstadoSync();
+    await cargarDatos(true);
+  } catch (err) {
+    mostrarToast(err.message, "error");
+    await cargarEstadoSync();
+  } finally {
+    bloquearAccionesSync(false);
+  }
+}
+
+function bloquearAccionesSync(bloquear) {
+  [$btnSyncIniciar, $btnSyncPausar, $btnSyncReanudar, $btnSyncRetry]
+    .forEach(btn => { btn.disabled = bloquear || btn.disabled; });
+}
+
 // ── Eventos de controles ─────────────────────────────────────────────────────
 $inputBusq.addEventListener("input", () => {
   clearTimeout(estado.debounceId);
@@ -366,7 +492,25 @@ $btnRecargar.addEventListener("click", () => {
   estado.busqueda = "";
   $inputBusq.value = "";
   cargarDatos();
+  cargarEstadoSync();
 });
+
+$btnSyncIniciar.addEventListener("click", () =>
+  ejecutarAccionSync("/sync/iniciar", "Sincronización iniciada")
+);
+
+$btnSyncPausar.addEventListener("click", () =>
+  ejecutarAccionSync("/sync/pausar", "Pausa solicitada")
+);
+
+$btnSyncReanudar.addEventListener("click", () =>
+  ejecutarAccionSync("/sync/reanudar", "Sincronización reanudada")
+);
+
+$btnSyncRetry.addEventListener("click", () =>
+  ejecutarAccionSync("/sync/reintentar-errores", "Errores devueltos a pendiente")
+);
 
 // ── Inicio ───────────────────────────────────────────────────────────────────
 cargarDatos();
+cargarEstadoSync();
